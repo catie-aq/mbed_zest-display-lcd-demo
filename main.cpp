@@ -6,7 +6,6 @@
 #include "BlockDevice.h"
 #include "FATFileSystem.h"
 #include "FlashIAPBlockDevice.h"
-#include "USBMSD.h"
 #include "bma280.h"
 #include "bme280.h"
 #include "ili9163c.h"
@@ -33,14 +32,23 @@ static lv_color_t buf[screenWidth * 10];
 #define SX8650_SWITCHED_TIME 5ms
 
 // Protoypes
-void application_setup(void);
-void application(void);
-void draw_cross(uint8_t x, uint8_t y);
 void read_coordinates(uint16_t x, uint16_t y);
+void application_setup(void);
 void retrieve_calibrate_data(char *bufer);
 void save_calibrate_date(char *buffer);
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area,
                    lv_color_t *color_p);
+void draw_cross(uint8_t x, uint8_t y);
+static void touchpad_get_xy(lv_coord_t *x, lv_coord_t *y);
+static bool touchpad_is_pressed(void);
+void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data);
+void draw_cross(uint8_t x, uint8_t y);
+static void sw_event_handler(lv_event_t *e);
+void lv_switch_button(void);
+static void set_temp(lv_obj_t *label, int32_t temp);
+static void set_hum(lv_obj_t *label, int32_t hum);
+static void set_pressure(lv_obj_t *label, int32_t pressure);
+void lv_label(void);
 
 // RTOS
 Thread thread;
@@ -250,96 +258,108 @@ void draw_cross(uint8_t x, uint8_t y) {
  * Switch button
  */
 
-static void event_handler(lv_event_t *e) {
+static void sw_event_handler(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
-  lv_obj_t *obj = lv_event_get_target(e);
   if (code == LV_EVENT_VALUE_CHANGED) {
     led1 = !led1;
-    LV_LOG_USER("State: %s\n",
-                lv_obj_has_state(obj, LV_STATE_CHECKED) ? "On" : "Off");
   }
 }
 
 void lv_switch_button(void) {
   sw = lv_switch_create(lv_scr_act());
   lv_obj_set_pos(sw, 34, 120);
-  lv_obj_add_event_cb(sw, event_handler, LV_EVENT_ALL, NULL);
+  lv_obj_add_event_cb(sw, sw_event_handler, LV_EVENT_ALL, NULL);
 }
 
 /**
  * Label
  */
 
-// static void temp_label_event_cb(lv_event_t *e) {
-//   lv_obj_t *label = lv_event_get_target(e);
-  
-//   /*Refresh the text*/
-
-//   // char temp_value[20];
-//   // sprintf(temp_value, "T: %0.2f °C", bma280.temperature());
-//   // printf("temp_value :%s \n\n", temp_value);
-//   // lv_label_set_text(label, temp_value);
-
-//   // lv_label_set_text_fmt(label,"%"LV_PRId32, (int32_t)bma280.temperature());
-
-// }
-
-// static void hum_label_event_cb(lv_event_t *e) {
-//   lv_obj_t *label = lv_event_get_target(e);
-  
-//   /*Refresh the text*/
-
-//   char hum_value[20];
-//   sprintf(hum_value, "H: %0.2f %", bme280.humidity());
-//   // printf("hum_value :%s \n\n", hum_value);
-//   lv_label_set_text(label, hum_value);
-// }
-
-// static void pressure_label_event_cb(lv_event_t *e) {
-//   lv_obj_t *label = lv_event_get_target(e);
-  
-//   /*Refresh the text*/
-
-//   char pressure_value[20];
-//   sprintf(pressure_value, "P: %0.2f hPa", bme280.pressure());
-//   // printf("pressure_value :%s \n\n", pressure_value);
-//   lv_label_set_text(label, pressure_value);
-// }
-
-void lv_label(void) {
-  lv_obj_set_flex_flow(lv_scr_act(), LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_flex_align(lv_scr_act(), LV_FLEX_ALIGN_CENTER,
-                        LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-  temp_label = lv_label_create(lv_scr_act());
-  lv_label_set_text(temp_label, "0");
-
-  hum_label = lv_label_create(lv_scr_act());
-  lv_label_set_text(hum_label, "0");
-
-  pressure_label = lv_label_create(lv_scr_act());
-  lv_label_set_text(pressure_label, "0");
-
-  // lv_obj_add_event_cb(temp_label, temp_label_event_cb, LV_EVENT_REFRESH, NULL);
-  // lv_obj_add_event_cb(hum_label, hum_label_event_cb, LV_EVENT_ALL, NULL);
-  // lv_obj_add_event_cb(pressure_label, pressure_label_event_cb, LV_EVENT_ALL, NULL);
+static void set_temp(lv_obj_t *label, int32_t temp) {
+  temp = (int32_t)bma280.temperature();
+  char temp_value[20];
+  sprintf(temp_value, "%" LV_PRId32, temp);
+  lv_label_set_text_fmt(label, temp_value);
 }
 
-void read_data() {
-  char temp_value[20];
-  sprintf(temp_value, "%0.2f °C", bma280.temperature());
-  // printf("temp_value :%s \n\n", temp_value);
-  lv_label_set_text(temp_label, temp_value);
-
+static void set_hum(lv_obj_t *label, int32_t hum) {
+  hum = (int32_t)bme280.humidity();
   char hum_value[20];
-  sprintf(hum_value, "%0.2f %", bme280.humidity());
-  // printf("hum_value :%s \n\n", hum_value);
-  lv_label_set_text(hum_label, hum_value);
+  sprintf(hum_value, "%" LV_PRId32, hum);
+  lv_label_set_text_fmt(label, hum_value);
+}
 
-  char pressure_value[20];
-  sprintf(pressure_value, "%0.2f Pa", bme280.pressure());
-  // printf("pressure_value :%s \n\n", pressure_value);
-  lv_label_set_text(pressure_label, pressure_value);
+static void set_pressure(lv_obj_t *label, int32_t pressure) {
+  pressure = (int32_t)bme280.pressure();
+  char press_value[20];
+  sprintf(press_value, "%" LV_PRId32, pressure);
+  lv_label_set_text_fmt(label, press_value);
+}
+
+void lv_label(void) {
+  // lv_obj_set_flex_flow(lv_scr_act(), LV_FLEX_FLOW_COLUMN);
+  // lv_obj_set_flex_align(lv_scr_act(), LV_FLEX_ALIGN_CENTER,
+  // LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+  lv_obj_t *title_temp_label = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(title_temp_label, 34, 28);
+  lv_label_set_text(title_temp_label, "T:");
+
+  temp_label = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(temp_label, 54, 28);
+  lv_label_set_text(temp_label, "Temp");
+
+  lv_obj_t *temp_label_unity = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(temp_label_unity, 74, 28);
+  lv_label_set_text(temp_label_unity, "°C");
+
+  lv_obj_t *title_hum_label = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(title_hum_label, 34, 56);
+  lv_label_set_text(title_hum_label, "H:");
+
+  hum_label = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(hum_label, 54, 56);
+  lv_label_set_text(hum_label, "Hum");
+
+  lv_obj_t *hum_label_unity = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(hum_label_unity, 74, 56);
+  lv_label_set_text(hum_label_unity, "%");
+
+  lv_obj_t *title_pressure_label = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(title_pressure_label, 34, 84);
+  lv_label_set_text(title_pressure_label, "P:");
+
+  pressure_label = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(pressure_label, 54, 84);
+  lv_label_set_text(pressure_label, "Press");
+
+  lv_obj_t *press_label_unity = lv_label_create(lv_scr_act());
+  lv_obj_set_pos(press_label_unity, 74, 84);
+  lv_label_set_text(press_label_unity, "hPa");
+
+  lv_anim_t a_temp;
+  lv_anim_init(&a_temp);
+  lv_anim_set_exec_cb(&a_temp, (lv_anim_exec_xcb_t)set_temp);
+  lv_anim_set_time(&a_temp, 500);
+  lv_anim_set_var(&a_temp, temp_label);
+  lv_anim_set_repeat_count(&a_temp, LV_ANIM_REPEAT_INFINITE);
+  lv_anim_start(&a_temp);
+
+  lv_anim_t a_hum;
+  lv_anim_init(&a_hum);
+  lv_anim_set_exec_cb(&a_hum, (lv_anim_exec_xcb_t)set_hum);
+  lv_anim_set_time(&a_hum, 500);
+  lv_anim_set_var(&a_hum, hum_label);
+  lv_anim_set_repeat_count(&a_hum, LV_ANIM_REPEAT_INFINITE);
+  lv_anim_start(&a_hum);
+
+  lv_anim_t a_press;
+  lv_anim_init(&a_press);
+  lv_anim_set_exec_cb(&a_press, (lv_anim_exec_xcb_t)set_pressure);
+  lv_anim_set_time(&a_press, 500);
+  lv_anim_set_var(&a_press, pressure_label);
+  lv_anim_set_repeat_count(&a_press, LV_ANIM_REPEAT_INFINITE);
+  lv_anim_start(&a_press);
 }
 
 int main() {
@@ -424,31 +444,12 @@ int main() {
   indev_drv.type = LV_INDEV_TYPE_POINTER; /*Touch pad is a pointer-like device*/
   indev_drv.read_cb = my_touchpad_read;   /*Set your driver function*/
   lv_indev_drv_register(&indev_drv);      /*Finally register the driver*/
-  // thread_data.start(callback(read_data);
 
-  USBMSD usb(bd);
   lv_label();
   lv_switch_button();
   sx8650iwltrt.attach_coordinates_measurement(read_coordinates);
 
   while (true) {
-    usb.process();
-
-    char temp_value[20];
-    sprintf(temp_value, "T: %0.2f °C", bma280.temperature());
-    // printf("temp_value :%s \n\n", temp_value);
-    lv_label_set_text(temp_label, temp_value);
-
-    char hum_value[20];
-    sprintf(hum_value, "H: %0.2f %", bme280.humidity());
-    // printf("hum_value :%s \n\n", hum_value);
-    lv_label_set_text(hum_label, hum_value);
-
-    char pressure_value[20];
-    sprintf(pressure_value, "P: %0.2f hPa", bme280.pressure());
-    // printf("pressure_value :%s \n\n", pressure_value);
-    lv_label_set_text(pressure_label, pressure_value);
-
     lv_task_handler();
     lv_tick_inc(10);
     ThisThread::sleep_for(10ms);
