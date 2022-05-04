@@ -297,9 +297,6 @@ static void set_pressure(lv_obj_t *label, int32_t pressure) {
 }
 
 void lv_label(void) {
-  // lv_obj_set_flex_flow(lv_scr_act(), LV_FLEX_FLOW_COLUMN);
-  // lv_obj_set_flex_align(lv_scr_act(), LV_FLEX_ALIGN_CENTER,
-  // LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
   lv_obj_t *title_temp_label = lv_label_create(lv_scr_act());
   lv_obj_set_pos(title_temp_label, 34, 28);
